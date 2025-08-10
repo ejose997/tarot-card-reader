@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shuffle, Download, CheckCircle, AlertCircle } from 'lucide-react';
+import { Shuffle, Download, CheckCircle, AlertCircle, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { Ollama } from 'ollama';
 import { cardMeanings } from './card-meanings.ts';
 
@@ -29,6 +29,9 @@ const TarotApp = () => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState('');
   const [modelStatus, setModelStatus] = useState<{[key: string]: 'available' | 'not-installed' | 'downloading'}>({});
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [previousModel, setPreviousModel] = useState<string | null>(null);
+  const [isUnloading, setIsUnloading] = useState(false);
 
   useEffect(() => {
     startNewSession();
@@ -89,14 +92,78 @@ const TarotApp = () => {
     }
   };
 
-  // Handle model selection
+  // Unload a model from memory
+  const unloadModel = async (modelName: string) => {
+    if (!modelName) return;
+    
+    setIsUnloading(true);
+    try {
+      // Ollama doesn't have a direct unload command in the JS client,
+      // but we can achieve this by generating an empty response which will load a minimal footprint
+      // Alternatively, you can make a direct API call to unload
+      const response = await fetch('http://localhost:11434/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: modelName,
+          prompt: '',
+          keep_alive: 0, // This tells Ollama to unload the model immediately
+        }),
+      });
+      
+      if (response.ok) {
+        console.log(`Model ${modelName} unloaded from memory`);
+      }
+    } catch (error) {
+      console.error(`Error unloading model ${modelName}:`, error);
+    } finally {
+      setIsUnloading(false);
+    }
+  };
+
+  // Handle model selection with cleanup
   const handleModelSelect = async (modelName: string) => {
     if (modelStatus[modelName] === 'available') {
+      // If switching to a different model, unload the previous one
+      if (previousModel && previousModel !== modelName) {
+        await unloadModel(previousModel);
+      }
+      
       setSelectedModel(modelName);
+      setPreviousModel(modelName);
+      
+      // Optionally, preload the new model
+      await preloadModel(modelName);
     } else if (modelStatus[modelName] === 'not-installed') {
       if (confirm(`${modelName} is not installed. Would you like to download it now?`)) {
         await downloadModel(modelName);
       }
+    }
+  };
+
+  // Preload a model into memory for faster first response
+  const preloadModel = async (modelName: string) => {
+    try {
+      // Send a minimal request to load the model into memory
+      const response = await fetch('http://localhost:11434/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: modelName,
+          prompt: 'Hello',
+          keep_alive: '5m', // Keep model in memory for 5 minutes
+        }),
+      });
+      
+      if (response.ok) {
+        console.log(`Model ${modelName} preloaded into memory`);
+      }
+    } catch (error) {
+      console.error(`Error preloading model ${modelName}:`, error);
     }
   };
 
@@ -405,82 +472,6 @@ Do not add any greetings, card summaries, introductory text, concluding remarks,
         </header>
 
         <main>
-          {/* Model Selector */}
-          <section className="bg-black/20 backdrop-blur-sm rounded-lg p-6 mb-4">
-            <h2 className="text-lg font-semibold mb-4">AI Model Selection</h2>
-            
-            {/* Download Progress */}
-            {isDownloading && (
-              <div className="mb-4 p-4 bg-purple-900/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <Download className="w-5 h-5 animate-pulse" />
-                  <span className="text-sm">{downloadProgress}</span>
-                </div>
-              </div>
-            )}
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {AVAILABLE_MODELS.map(model => {
-                const isSelected = selectedModel === model.name;
-                const status = modelStatus[model.name];
-                
-                return (
-                  <button
-                    key={model.name}
-                    onClick={() => handleModelSelect(model.name)}
-                    disabled={status === 'downloading' || isDownloading}
-                    className={`
-                      p-4 rounded-lg border-2 transition-all text-left
-                      ${isSelected 
-                        ? 'border-purple-400 bg-purple-900/50' 
-                        : 'border-purple-600/30 bg-black/20 hover:bg-purple-900/30'
-                      }
-                      ${status === 'downloading' ? 'opacity-50 cursor-wait' : ''}
-                      ${isDownloading && status !== 'downloading' ? 'opacity-50' : ''}
-                    `}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h3 className="font-semibold text-white">{model.displayName}</h3>
-                        <p className="text-xs text-purple-300">{model.size}</p>
-                      </div>
-                      <div className="flex items-center">
-                        {status === 'available' && (
-                          <CheckCircle className="w-5 h-5 text-green-400" />
-                        )}
-                        {status === 'not-installed' && (
-                          <AlertCircle className="w-5 h-5 text-yellow-400" />
-                        )}
-                        {status === 'downloading' && (
-                          <Download className="w-5 h-5 text-blue-400 animate-pulse" />
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-xs text-purple-200">{model.description}</p>
-                    {model.category === 'recommended' && (
-                      <span className="inline-block mt-2 px-2 py-1 bg-purple-600/50 rounded text-xs font-semibold">
-                        Recommended
-                      </span>
-                    )}
-                    {status === 'not-installed' && (
-                      <span className="inline-block mt-2 px-2 py-1 bg-yellow-600/50 rounded text-xs">
-                        Click to download
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            
-            <div className="mt-4 text-center">
-              <p className="text-sm text-purple-300">
-                Currently using: <span className="font-semibold text-purple-100">
-                  {AVAILABLE_MODELS.find(m => m.name === selectedModel)?.displayName || selectedModel}
-                </span>
-              </p>
-            </div>
-          </section>
-
           <section className="bg-black/20 backdrop-blur-sm rounded-lg p-6 mb-8" aria-labelledby="question-heading">
             <div className="flex justify-between items-center mb-3">
               <h2 id="question-heading" className="text-lg font-semibold">{conversation.length === 0 ? 'Your Question:' : 'Follow-up Question:'}</h2>
@@ -495,6 +486,80 @@ Do not add any greetings, card summaries, introductory text, concluding remarks,
               className="w-full p-4 rounded-lg bg-white/10 border border-purple-300/30 text-white placeholder-purple-200 resize-none h-24 focus:ring-2 focus:ring-purple-400 focus:outline-none"
               aria-label="Your question for the tarot reading"
             />
+
+            {/* Advanced Settings */}
+            <div className="mt-4">
+              <button
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="flex items-center gap-2 text-sm text-purple-300 hover:text-purple-100 transition-colors"
+              >
+                <Settings className="w-4 h-4" />
+                Advanced Settings
+                {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+              
+              {showAdvanced && (
+                <div className="mt-4 p-4 bg-black/30 rounded-lg">
+                  {/* Download Progress */}
+                  {isDownloading && (
+                    <div className="mb-4 p-3 bg-purple-900/50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Download className="w-4 h-4 animate-pulse" />
+                        <span className="text-sm">{downloadProgress}</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center gap-4">
+                    <label className="text-sm text-purple-200">AI Model:</label>
+                    <div className="flex-1 max-w-xs">
+                      <select
+                        value={selectedModel}
+                        onChange={(e) => handleModelSelect(e.target.value)}
+                        disabled={isDownloading}
+                        className="w-full px-3 py-2 bg-white/10 border border-purple-300/30 rounded-lg text-white text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                      >
+                        {AVAILABLE_MODELS.map(model => {
+                          const status = modelStatus[model.name];
+                          const icon = status === 'available' ? '✓' : status === 'downloading' ? '⏳' : '↓';
+                          return (
+                            <option key={model.name} value={model.name}>
+                              {icon} {model.displayName} ({model.size})
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                    
+                    {modelStatus[selectedModel] === 'not-installed' && (
+                      <button
+                        onClick={() => downloadModel(selectedModel)}
+                        disabled={isDownloading}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div className="mt-2 flex items-center gap-2">
+                    {modelStatus[selectedModel] === 'available' && (
+                      <><CheckCircle className="w-4 h-4 text-green-400" />
+                      <span className="text-xs text-green-400">Model ready</span></>
+                    )}
+                    {modelStatus[selectedModel] === 'not-installed' && (
+                      <><AlertCircle className="w-4 h-4 text-yellow-400" />
+                      <span className="text-xs text-yellow-400">Model not installed - click download to install</span></>
+                    )}
+                  </div>
+                  
+                  <p className="text-xs text-purple-300 mt-3">
+                    {AVAILABLE_MODELS.find(m => m.name === selectedModel)?.description}
+                  </p>
+                </div>
+              )}
+            </div>
           </section>
 
           <div className="flex justify-center items-center gap-4 mb-6">
