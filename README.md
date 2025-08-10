@@ -33,27 +33,35 @@ curl -fsSL https://ollama.ai/install.sh | sh
 **Windows:**
 Download the installer from [Ollama website](https://ollama.ai/download)
 
-### 2. Start Ollama and Download a Model
+### 2. Start Ollama and Download the Model
 
 ```bash
 # Start Ollama service (if not already running)
 ollama serve
+
+# In a new terminal, pull the default model (Mistral 7B - 4.1GB)
+ollama pull mistral
 ```
 
-#### Recommended Models
+**Note:** The app is configured to use Mistral 7B by default, which provides an excellent balance of quality and performance. The model uses a temperature of 0.8 for consistent yet creative readings.
 
-The app is configured to use `gpt-oss:20b` by default, but this is a 20GB model which may be overkill for tarot readings. Here are better alternatives:
+#### Alternative Models
 
-**Recommended for most users:**
+If you prefer a different model, here are some alternatives:
+
+**For faster performance (smaller models):**
 ```bash
-# Mistral 7B - Excellent balance of quality and size (4.1GB)
-ollama pull mistral
-
 # Llama 3.2 3B - Very fast and efficient (2GB)
 ollama pull llama3.2
 
 # Phi-3 Mini - Microsoft's efficient model (2.3GB)
 ollama pull phi3
+
+# Gemma 2B - Google's smallest model (1.4GB)
+ollama pull gemma:2b
+
+# TinyLlama - Very small and fast (637MB)
+ollama pull tinyllama
 ```
 
 **For better quality (larger models):**
@@ -65,16 +73,7 @@ ollama pull llama3.1
 ollama pull mixtral
 ```
 
-**For lower-end machines:**
-```bash
-# Gemma 2B - Google's smallest model (1.4GB)
-ollama pull gemma:2b
-
-# TinyLlama - Very small and fast (637MB)
-ollama pull tinyllama
-```
-
-**Note:** After downloading your preferred model, you'll need to update the model name in `tarot-reading-app.tsx` (line 260) from `'gpt-oss:20b'` to your chosen model (e.g., `'mistral'`, `'llama3.2'`, etc.)
+**Note:** If you choose a different model, update the model name in `tarot-reading-app.tsx` (line 260) from `'mistral'` to your chosen model (e.g., `'llama3.2'`, `'phi3'`, etc.)
 
 ### 3. Clone the Repository
 
@@ -105,7 +104,7 @@ The application will be available at `http://localhost:5173`
    - **Random Draw**: Click "Draw 3 Cards" to randomly select cards
    - **Manual Selection**: Toggle to manual mode and select 3 cards from the deck
 4. Click "Get Interpretation" to receive your tarot reading
-5. The app will use your chosen Ollama model to generate a personalized interpretation
+5. The app will use Mistral (or your chosen model) to generate a personalized interpretation with optimized temperature settings for balanced readings
 
 ## Troubleshooting
 

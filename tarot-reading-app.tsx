@@ -257,13 +257,16 @@ Do not add any greetings, card summaries, introductory text, concluding remarks,
       const user_prompt = `My question is: \"${question}\"\n\nI have drawn these three cards:\n1. ${selectedCards[0].name} - ${selectedCards[0].reversed ? 'REVERSED' : 'UPRIGHT'}\n2. ${selectedCards[1].name} - ${selectedCards[1].reversed ? 'REVERSED' : 'UPRIGHT'}\n3. ${selectedCards[2].name} - ${selectedCards[2].reversed ? 'REVERSED' : 'UPRIGHT'}\n\nPlease provide the reading.`;
 
       const response = await ollama.chat({
-        model: 'gpt-oss:20b',
+        model: 'mistral',
         messages: [
           {
             role: 'user',
             content: `${system_prompt}\n\n${user_prompt}`,
           },
         ],
+        options: {
+          temperature: 0.8,
+        },
       });
       const newInterpretation = response.message.content;
       const newEntry = { question: question, cards: [...selectedCards], interpretation: newInterpretation, timestamp: Date.now() };
