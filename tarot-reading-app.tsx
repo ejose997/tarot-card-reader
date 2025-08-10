@@ -1,10 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Shuffle } from 'lucide-react';
+import { Shuffle, Download, CheckCircle, AlertCircle } from 'lucide-react';
 import { Ollama } from 'ollama';
 import { cardMeanings } from './card-meanings.ts';
 
 // Initialize the Ollama client
 const ollama = new Ollama();
+
+// Available models configuration
+const AVAILABLE_MODELS = [
+  { name: 'mistral', displayName: 'Mistral 7B', size: '4.1GB', category: 'recommended', description: 'Best balance of quality and speed' },
+  { name: 'llama3.2', displayName: 'Llama 3.2 3B', size: '2GB', category: 'fast', description: 'Very fast and efficient' },
+  { name: 'llama3.1', displayName: 'Llama 3.1 8B', size: '4.7GB', category: 'quality', description: 'Great quality, reasonable size' },
+  { name: 'phi3', displayName: 'Phi-3 Mini', size: '2.3GB', category: 'fast', description: 'Microsoft\'s efficient model' },
+  { name: 'gemma:2b', displayName: 'Gemma 2B', size: '1.4GB', category: 'lightweight', description: 'Google\'s smallest model' },
+  { name: 'tinyllama', displayName: 'TinyLlama', size: '637MB', category: 'lightweight', description: 'Very small and fast' },
+  { name: 'mixtral', displayName: 'Mixtral 8x7B', size: '26GB', category: 'quality', description: 'High quality but larger' },
+];
 
 const TarotApp = () => {
   const [question, setQuestion] = useState('');
@@ -13,10 +24,81 @@ const TarotApp = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [selectionMode, setSelectionMode] = useState('random');
   const [chat, setChat] = useState<boolean>(false);
+  const [selectedModel, setSelectedModel] = useState('mistral');
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState('');
+  const [modelStatus, setModelStatus] = useState<{[key: string]: 'available' | 'not-installed' | 'downloading'}>({});
 
   useEffect(() => {
     startNewSession();
+    checkInstalledModels();
   }, []);
+
+  // Check which models are installed
+  const checkInstalledModels = async () => {
+    try {
+      const response = await ollama.list();
+      const installed = response.models.map(m => {
+        // Extract base model name (remove tag if present)
+        const name = m.name.split(':')[0];
+        return name;
+      });
+      setAvailableModels(installed);
+      
+      // Update model status
+      const status = {};
+      AVAILABLE_MODELS.forEach(model => {
+        status[model.name] = installed.includes(model.name) ? 'available' : 'not-installed';
+      });
+      setModelStatus(status);
+    } catch (error) {
+      console.error('Error checking models:', error);
+    }
+  };
+
+  // Download a model if not installed
+  const downloadModel = async (modelName: string) => {
+    setIsDownloading(true);
+    setDownloadProgress(`Downloading ${modelName}...`);
+    setModelStatus(prev => ({ ...prev, [modelName]: 'downloading' }));
+    
+    try {
+      const stream = await ollama.pull({ 
+        model: modelName,
+        stream: true 
+      });
+      
+      for await (const part of stream) {
+        if (part.status) {
+          setDownloadProgress(part.status);
+        }
+      }
+      
+      // Update status after successful download
+      setModelStatus(prev => ({ ...prev, [modelName]: 'available' }));
+      setAvailableModels(prev => [...prev, modelName]);
+      setSelectedModel(modelName);
+      setDownloadProgress('');
+    } catch (error) {
+      console.error('Error downloading model:', error);
+      setDownloadProgress('Download failed. Please try again.');
+      setModelStatus(prev => ({ ...prev, [modelName]: 'not-installed' }));
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  // Handle model selection
+  const handleModelSelect = async (modelName: string) => {
+    if (modelStatus[modelName] === 'available') {
+      setSelectedModel(modelName);
+    } else if (modelStatus[modelName] === 'not-installed') {
+      if (confirm(`${modelName} is not installed. Would you like to download it now?`)) {
+        await downloadModel(modelName);
+      }
+    }
+  };
 
   // --- PIXEL ART COMPONENTS ---
 
@@ -257,7 +339,7 @@ Do not add any greetings, card summaries, introductory text, concluding remarks,
       const user_prompt = `My question is: \"${question}\"\n\nI have drawn these three cards:\n1. ${selectedCards[0].name} - ${selectedCards[0].reversed ? 'REVERSED' : 'UPRIGHT'}\n2. ${selectedCards[1].name} - ${selectedCards[1].reversed ? 'REVERSED' : 'UPRIGHT'}\n3. ${selectedCards[2].name} - ${selectedCards[2].reversed ? 'REVERSED' : 'UPRIGHT'}\n\nPlease provide the reading.`;
 
       const response = await ollama.chat({
-        model: 'mistral',
+        model: selectedModel,
         messages: [
           {
             role: 'user',
@@ -323,6 +405,82 @@ Do not add any greetings, card summaries, introductory text, concluding remarks,
         </header>
 
         <main>
+          {/* Model Selector */}
+          <section className="bg-black/20 backdrop-blur-sm rounded-lg p-6 mb-4">
+            <h2 className="text-lg font-semibold mb-4">AI Model Selection</h2>
+            
+            {/* Download Progress */}
+            {isDownloading && (
+              <div className="mb-4 p-4 bg-purple-900/50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Download className="w-5 h-5 animate-pulse" />
+                  <span className="text-sm">{downloadProgress}</span>
+                </div>
+              </div>
+            )}
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {AVAILABLE_MODELS.map(model => {
+                const isSelected = selectedModel === model.name;
+                const status = modelStatus[model.name];
+                
+                return (
+                  <button
+                    key={model.name}
+                    onClick={() => handleModelSelect(model.name)}
+                    disabled={status === 'downloading' || isDownloading}
+                    className={`
+                      p-4 rounded-lg border-2 transition-all text-left
+                      ${isSelected 
+                        ? 'border-purple-400 bg-purple-900/50' 
+                        : 'border-purple-600/30 bg-black/20 hover:bg-purple-900/30'
+                      }
+                      ${status === 'downloading' ? 'opacity-50 cursor-wait' : ''}
+                      ${isDownloading && status !== 'downloading' ? 'opacity-50' : ''}
+                    `}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <h3 className="font-semibold text-white">{model.displayName}</h3>
+                        <p className="text-xs text-purple-300">{model.size}</p>
+                      </div>
+                      <div className="flex items-center">
+                        {status === 'available' && (
+                          <CheckCircle className="w-5 h-5 text-green-400" />
+                        )}
+                        {status === 'not-installed' && (
+                          <AlertCircle className="w-5 h-5 text-yellow-400" />
+                        )}
+                        {status === 'downloading' && (
+                          <Download className="w-5 h-5 text-blue-400 animate-pulse" />
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-purple-200">{model.description}</p>
+                    {model.category === 'recommended' && (
+                      <span className="inline-block mt-2 px-2 py-1 bg-purple-600/50 rounded text-xs font-semibold">
+                        Recommended
+                      </span>
+                    )}
+                    {status === 'not-installed' && (
+                      <span className="inline-block mt-2 px-2 py-1 bg-yellow-600/50 rounded text-xs">
+                        Click to download
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            
+            <div className="mt-4 text-center">
+              <p className="text-sm text-purple-300">
+                Currently using: <span className="font-semibold text-purple-100">
+                  {AVAILABLE_MODELS.find(m => m.name === selectedModel)?.displayName || selectedModel}
+                </span>
+              </p>
+            </div>
+          </section>
+
           <section className="bg-black/20 backdrop-blur-sm rounded-lg p-6 mb-8" aria-labelledby="question-heading">
             <div className="flex justify-between items-center mb-3">
               <h2 id="question-heading" className="text-lg font-semibold">{conversation.length === 0 ? 'Your Question:' : 'Follow-up Question:'}</h2>
